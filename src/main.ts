@@ -1,7 +1,21 @@
 import { AppModule } from './app.module'
-import { CommandFactory } from 'nest-commander'
+import { NestFactory } from '@nestjs/core'
+import { MicroserviceOptions } from '@nestjs/microservices'
 
 async function bootstrap() {
-  await CommandFactory.run(AppModule)
+  const port: number = +process.env.PORT
+
+  const app = await NestFactory.createMicroservice<MicroserviceOptions>(
+    AppModule,
+    {
+      options: {
+        port: port,
+      },
+    },
+  )
+
+  await app.listen()
+
+  console.log(`app is running in port ${port}`)
 }
 bootstrap()

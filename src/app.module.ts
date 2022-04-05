@@ -3,6 +3,7 @@ import { AppService } from './app.service'
 import { HttpModule } from '@nestjs/axios'
 import { ConfigModule } from '@nestjs/config'
 import configuration from './configuration'
+import { ScheduleModule } from '@nestjs/schedule'
 
 @Module({
   imports: [
@@ -10,6 +11,7 @@ import configuration from './configuration'
       isGlobal: true,
       load: [configuration],
     }),
+    ScheduleModule.forRoot(),
     HttpModule,
   ],
   providers: [AppService],

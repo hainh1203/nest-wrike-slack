@@ -3,6 +3,8 @@ import { HttpService } from '@nestjs/axios'
 import { lastValueFrom } from 'rxjs'
 import { TicketInterface } from './ticket.interface'
 import { ConfigService } from '@nestjs/config'
+import { MemberInterface } from './member.interface'
+import { Cron } from '@nestjs/schedule'
 
 // https://developers.wrike.com/api/v4/timelogs
 @Injectable()
@@ -10,31 +12,30 @@ export class AppService {
   constructor(
     private configService: ConfigService,
     private httpService: HttpService,
-  ) {
+  ) {}
+
+  @Cron('0 0 20 * * 1-5') // 20h T2 -> t6
+  public async reportTimeLog(): Promise<void> {
     if (
       !this.configService.get('token') ||
-      !this.configService.get('webhook')
+      !this.configService.get('google_sheet_api')
     ) {
       console.log('token and webhook cannot be empty')
       return
     }
 
-    this.reportTimeLog()
-  }
-
-  public async reportTimeLog(): Promise<void> {
     const timeLogs: [] = await this.getTimeLogs()
     const timeLogsByUserId = this.groupTimeLogByUserId(timeLogs)
     const timeLogsByEmail = await this.replaceUserIdAndTicketId(
       timeLogsByUserId,
     )
 
-    const emails: string[] = this.configService.get('emails')
+    const members: MemberInterface[] = await this.getMembers()
 
-    emails.forEach((email: string): void => {
+    members.forEach((member: MemberInterface): void => {
       this.sendMessageToSlack(
-        this.configService.get('webhook'),
-        this.makeMessage(timeLogsByEmail, email),
+        member.webhook,
+        this.makeMessage(timeLogsByEmail, member),
       )
     })
   }
@@ -60,6 +61,20 @@ export class AppService {
       console.log('getTimeLogs -> retry')
       await this.sleep(1000)
       return await this.getTimeLogs()
+    }
+  }
+
+  async getMembers(): Promise<MemberInterface[]> {
+    console.log('getMembers...')
+
+    const api = this.configService.get('google_sheet_api')
+
+    try {
+      const response = await lastValueFrom(this.httpService.get(api))
+
+      return response.data.content
+    } catch (e) {
+      return []
     }
   }
 
@@ -183,24 +198,26 @@ export class AppService {
     )
   }
 
-  makeMessage(timeLogs, email: string): [] {
+  makeMessage(timeLogs, member: MemberInterface): [] {
     let messages: any = []
 
-    if (!timeLogs.hasOwnProperty(email)) {
+    const name: string = member.slack_id
+      ? `<@${member.slack_id}>`
+      : `*${member.email.replace(this.configService.get('suffix_mail'), '')}*`
+
+    if (!timeLogs.hasOwnProperty(member.email)) {
       messages = messages.concat([
         {
           type: 'divider',
         },
         {
-          type: 'header',
-          text: {
-            type: 'plain_text',
-            text: `${email.replace(
-              this.configService.get('suffix_mail'),
-              '',
-            )} ${this.configService.get('icon_warning')}`,
-            emoji: true,
-          },
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `${name} ${this.configService.get('icon_warning')}`,
+            },
+          ],
         },
         {
           type: 'section',
@@ -217,9 +234,9 @@ export class AppService {
         },
       ])
     } else {
-      const tickets: TicketInterface[] = timeLogs[email]
+      const tickets: TicketInterface[] = timeLogs[member.email]
 
-      const totalSpentTime = this.sumSpentTime(tickets)
+      const totalSpentTime: number = this.sumSpentTime(tickets)
 
       const icon: string =
         totalSpentTime > this.configService.get('minimum_time') &&
@@ -232,15 +249,13 @@ export class AppService {
           type: 'divider',
         },
         {
-          type: 'header',
-          text: {
-            type: 'plain_text',
-            text: `${email.replace(
-              this.configService.get('suffix_mail'),
-              '',
-            )} ${icon}`,
-            emoji: true,
-          },
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `${name} ${icon}`,
+            },
+          ],
         },
         {
           type: 'section',
@@ -257,21 +272,23 @@ export class AppService {
         },
       ])
 
-      tickets.forEach((ticket: TicketInterface): void => {
-        messages.push({
-          type: 'section',
-          fields: [
-            {
-              type: 'mrkdwn',
-              text: ticket.title,
-            },
-            {
-              type: 'mrkdwn',
-              text: `${ticket.spentTime}h`,
-            },
-          ],
+      if (member.show_detail) {
+        tickets.forEach((ticket: TicketInterface): void => {
+          messages.push({
+            type: 'section',
+            fields: [
+              {
+                type: 'mrkdwn',
+                text: ticket.title,
+              },
+              {
+                type: 'mrkdwn',
+                text: `${ticket.spentTime}h`,
+              },
+            ],
+          })
         })
-      })
+      }
     }
 
     return messages
