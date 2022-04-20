@@ -241,8 +241,8 @@ export class AppService {
       const totalSpentTime: number = this.sumSpentTime(tickets)
 
       const icon: string =
-        totalSpentTime > this.configService.get('minimum_time') &&
-        totalSpentTime < this.configService.get('maximum_time')
+        totalSpentTime >= this.configService.get('minimum_time') &&
+        totalSpentTime <= this.configService.get('maximum_time')
           ? this.configService.get('icon_ok')
           : this.configService.get('icon_warning')
 
