@@ -14,7 +14,7 @@ export class AppService {
     private httpService: HttpService,
   ) {}
 
-  @Cron('0 0 20 * * 1-5') // 20h T2 -> t6
+  @Cron('0 0 16 * * 1-5') // 16h T2 -> t6
   public async reportTimeLog(): Promise<void> {
     if (
       !this.configService.get('token') ||
