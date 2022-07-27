@@ -5,6 +5,8 @@ import { TicketInterface } from './ticket.interface'
 import { ConfigService } from '@nestjs/config'
 import { MemberInterface } from './member.interface'
 import { Cron } from '@nestjs/schedule'
+import { SlackService } from './slack.service'
+import { SlackIdsInterface } from './slack-ids.interface'
 
 // https://developers.wrike.com/api/v4/timelogs
 @Injectable()
@@ -12,6 +14,7 @@ export class AppService {
   constructor(
     private configService: ConfigService,
     private httpService: HttpService,
+    private slackService: SlackService,
   ) {}
 
   @Cron('0 0 23 * * 1-5', {
@@ -33,11 +36,23 @@ export class AppService {
     )
 
     const members: MemberInterface[] = await this.getMembers()
+    const slackIds: SlackIdsInterface = await this.slackService.getSlackIds()
 
     members.forEach((member: MemberInterface): void => {
+      const slackName: string = member.email.replace(
+        this.configService.get('suffix_mail'),
+        '',
+      )
+      const mention: string = slackIds[slackName] || slackName
+
       this.sendMessageToSlack(
         member.webhook,
-        this.makeMessage(timeLogsByEmail, member),
+        this.makeMessage(
+          timeLogsByEmail,
+          member.email,
+          mention,
+          member.show_detail,
+        ),
       )
     })
   }
@@ -200,14 +215,15 @@ export class AppService {
     )
   }
 
-  makeMessage(timeLogs, member: MemberInterface): [] {
+  makeMessage(
+    timeLogs,
+    email: string,
+    mention: string,
+    showDetail: number,
+  ): [] {
     let messages: any = []
 
-    const name: string = member.slack_id
-      ? `<@${member.slack_id}>`
-      : `*${member.email.replace(this.configService.get('suffix_mail'), '')}*`
-
-    if (!timeLogs.hasOwnProperty(member.email)) {
+    if (!timeLogs.hasOwnProperty(email)) {
       messages = messages.concat([
         {
           type: 'divider',
@@ -217,7 +233,7 @@ export class AppService {
           elements: [
             {
               type: 'mrkdwn',
-              text: `${name} ${this.configService.get('icon_warning')}`,
+              text: `${mention} ${this.configService.get('icon_warning')}`,
             },
           ],
         },
@@ -236,7 +252,7 @@ export class AppService {
         },
       ])
     } else {
-      const tickets: TicketInterface[] = timeLogs[member.email]
+      const tickets: TicketInterface[] = timeLogs[email]
 
       const totalSpentTime: number = this.sumSpentTime(tickets)
 
@@ -255,7 +271,7 @@ export class AppService {
           elements: [
             {
               type: 'mrkdwn',
-              text: `${name} ${icon}`,
+              text: `${mention} ${icon}`,
             },
           ],
         },
@@ -274,7 +290,7 @@ export class AppService {
         },
       ])
 
-      if (member.show_detail) {
+      if (showDetail) {
         tickets.forEach((ticket: TicketInterface): void => {
           messages.push({
             type: 'section',

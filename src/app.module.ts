@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios'
 import { ConfigModule } from '@nestjs/config'
 import configuration from './configuration'
 import { ScheduleModule } from '@nestjs/schedule'
+import { SlackService } from './slack.service'
 
 @Module({
   imports: [
@@ -14,6 +15,6 @@ import { ScheduleModule } from '@nestjs/schedule'
     ScheduleModule.forRoot(),
     HttpModule,
   ],
-  providers: [AppService],
+  providers: [AppService, SlackService],
 })
 export class AppModule {}
