@@ -43,7 +43,12 @@ export class AppService {
         this.configService.get('suffix_mail'),
         '',
       )
-      const mention: string = slackIds[slackName] || slackName
+
+      let mention: string = slackName
+
+      if (slackIds[slackName]) {
+        mention = `<@${slackIds[slackName]}>`
+      }
 
       this.sendMessageToSlack(
         member.webhook,
