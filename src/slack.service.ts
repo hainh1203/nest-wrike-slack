@@ -21,10 +21,18 @@ export class SlackService {
   }
 
   public async getSlackIds(): Promise<SlackIdsInterface> {
+    console.log('getSlackIds...')
     const users = await this.app.client.users.list()
     const slackIds: SlackIdsInterface = {}
 
     users.members.forEach((member) => {
+      if (
+        member.is_bot ||
+        member.deleted ||
+        this.configService.get<string[]>('ignore').includes(member.name)
+      )
+        return
+
       slackIds[member.name] = member.id
     })
 

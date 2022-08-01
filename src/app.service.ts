@@ -20,6 +20,35 @@ export class AppService {
   @Cron('0 0 23 * * 1-5', {
     timeZone: 'Asia/Ho_Chi_Minh',
   }) // 23h00 T2 -> t6
+  public async reportAll(): Promise<void> {
+    if (!this.configService.get('slack_webhook_all')) {
+      console.log('slack webhook cannot be empty')
+      return
+    }
+
+    const timeLogs: [] = await this.getTimeLogs()
+    const timeLogsByUserId = this.groupTimeLogByUserId(timeLogs)
+    const timeLogsByEmail = await this.replaceUserIdAndTicketId(
+      timeLogsByUserId,
+    )
+
+    const slackIds: SlackIdsInterface = await this.slackService.getSlackIds()
+
+    for (const slackName in slackIds) {
+      this.sendMessageToSlack(
+        this.configService.get('slack_webhook_all'),
+        this.makeMessageAll(
+          timeLogsByEmail,
+          slackName + this.configService.get('suffix_mail'),
+          `<@${slackIds[slackName]}>`,
+        ),
+      )
+    }
+  }
+
+  @Cron('0 0 23 * * 1-5', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+  }) // 23h00 T2 -> t6
   public async reportTimeLog(): Promise<void> {
     if (
       !this.configService.get('token') ||
@@ -277,6 +306,98 @@ export class AppService {
             {
               type: 'mrkdwn',
               text: `${mention} ${icon}`,
+            },
+          ],
+        },
+        {
+          type: 'section',
+          fields: [
+            {
+              type: 'mrkdwn',
+              text: `*Tickets* (${tickets.length})`,
+            },
+            {
+              type: 'mrkdwn',
+              text: `*Spent Time* (${totalSpentTime}h)`,
+            },
+          ],
+        },
+      ])
+
+      if (showDetail) {
+        tickets.forEach((ticket: TicketInterface): void => {
+          messages.push({
+            type: 'section',
+            fields: [
+              {
+                type: 'mrkdwn',
+                text: ticket.title,
+              },
+              {
+                type: 'mrkdwn',
+                text: `${ticket.spentTime}h`,
+              },
+            ],
+          })
+        })
+      }
+    }
+
+    return messages
+  }
+
+  makeMessageAll(timeLogs, email: string, mention: string, showDetail = 1): [] {
+    let messages: any = []
+
+    if (!timeLogs.hasOwnProperty(email)) {
+      messages = messages.concat([
+        {
+          type: 'divider',
+        },
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `${mention} ${this.configService.get('icon_warning')}`,
+            },
+          ],
+        },
+        {
+          type: 'section',
+          fields: [
+            {
+              type: 'mrkdwn',
+              text: '*Tickets* (0)',
+            },
+            {
+              type: 'mrkdwn',
+              text: '*Spent Time* (0h)',
+            },
+          ],
+        },
+      ])
+    } else {
+      const tickets: TicketInterface[] = timeLogs[email]
+
+      const totalSpentTime: number = this.sumSpentTime(tickets)
+
+      if (
+        totalSpentTime >= this.configService.get('minimum_time') &&
+        totalSpentTime <= this.configService.get('maximum_time')
+      )
+        return []
+
+      messages = messages.concat([
+        {
+          type: 'divider',
+        },
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `${mention} ${this.configService.get('icon_warning')}`,
             },
           ],
         },
