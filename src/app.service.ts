@@ -34,16 +34,14 @@ export class AppService {
 
     const slackIds: SlackIdsInterface = await this.slackService.getSlackIds()
 
-    for (const slackName in slackIds) {
-      this.sendMessageToSlack(
-        this.configService.get('slack_webhook_all'),
-        this.makeMessageAll(
-          timeLogsByEmail,
-          slackName + this.configService.get('suffix_mail'),
-          `<@${slackIds[slackName]}>`,
-        ),
-      )
-    }
+    const text: string = this.makeMessageAll(timeLogsByEmail, slackIds)
+
+    if (!text) return
+
+    await this.sendMessageText(
+      this.configService.get('slack_webhook_all'),
+      text,
+    )
   }
 
   @Cron('0 0 23 * * 1-5', {
@@ -79,7 +77,7 @@ export class AppService {
         mention = `<@${slackIds[slackName]}>`
       }
 
-      this.sendMessageToSlack(
+      this.sendMessageBlock(
         member.webhook,
         this.makeMessage(
           timeLogsByEmail,
@@ -231,7 +229,7 @@ export class AppService {
     }
   }
 
-  async sendMessageToSlack(webhook: string, messages: []): Promise<void> {
+  async sendMessageBlock(webhook: string, messages: []): Promise<void> {
     if (!messages.length) return
 
     await lastValueFrom(
@@ -239,6 +237,22 @@ export class AppService {
         webhook,
         {
           blocks: messages,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      ),
+    )
+  }
+
+  async sendMessageText(webhook: string, text: string): Promise<void> {
+    await lastValueFrom(
+      this.httpService.post(
+        webhook,
+        {
+          text,
         },
         {
           headers: {
@@ -267,7 +281,7 @@ export class AppService {
           elements: [
             {
               type: 'mrkdwn',
-              text: `${mention} ${this.configService.get('icon_warning')}`,
+              text: `${mention} ${this.configService.get('icon_zero')}`,
             },
           ],
         },
@@ -293,8 +307,8 @@ export class AppService {
       const icon: string =
         totalSpentTime >= this.configService.get('minimum_time') &&
         totalSpentTime <= this.configService.get('maximum_time')
-          ? this.configService.get('icon_ok')
-          : this.configService.get('icon_warning')
+          ? this.configService.get('icon_valid')
+          : this.configService.get('icon_zero')
 
       messages = messages.concat([
         {
@@ -346,96 +360,57 @@ export class AppService {
     return messages
   }
 
-  makeMessageAll(timeLogs, email: string, mention: string, showDetail = 1): [] {
-    let messages: any = []
+  makeMessageAll(timeLogs, slackIds: SlackIdsInterface): string {
+    const valid: string[] = []
+    const zero: string[] = []
+    const invalid: string[] = []
 
-    if (!timeLogs.hasOwnProperty(email)) {
-      messages = messages.concat([
-        {
-          type: 'divider',
-        },
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: `${mention} ${this.configService.get('icon_warning')}`,
-            },
-          ],
-        },
-        {
-          type: 'section',
-          fields: [
-            {
-              type: 'mrkdwn',
-              text: '*Tickets* (0)',
-            },
-            {
-              type: 'mrkdwn',
-              text: '*Spent Time* (0h)',
-            },
-          ],
-        },
-      ])
-    } else {
-      const tickets: TicketInterface[] = timeLogs[email]
+    for (const slackName in slackIds) {
+      const email = slackName + this.configService.get('suffix_mail')
+      const mention = `<@${slackIds[slackName]}>`
 
-      const totalSpentTime: number = this.sumSpentTime(tickets)
+      if (!timeLogs.hasOwnProperty(email)) {
+        zero.push(mention)
+        continue
+      }
+
+      const totalSpentTime: number = this.sumSpentTime(timeLogs[email])
 
       if (
-        totalSpentTime >= this.configService.get('minimum_time') &&
-        totalSpentTime <= this.configService.get('maximum_time')
-      )
-        return []
-
-      messages = messages.concat([
-        {
-          type: 'divider',
-        },
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: `${mention} ${this.configService.get('icon_warning')}`,
-            },
-          ],
-        },
-        {
-          type: 'section',
-          fields: [
-            {
-              type: 'mrkdwn',
-              text: `*Tickets* (${tickets.length})`,
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Spent Time* (${totalSpentTime}h)`,
-            },
-          ],
-        },
-      ])
-
-      if (showDetail) {
-        tickets.forEach((ticket: TicketInterface): void => {
-          messages.push({
-            type: 'section',
-            fields: [
-              {
-                type: 'mrkdwn',
-                text: ticket.title,
-              },
-              {
-                type: 'mrkdwn',
-                text: `${ticket.spentTime}h`,
-              },
-            ],
-          })
-        })
+        totalSpentTime < this.configService.get('minimum_time') ||
+        totalSpentTime > this.configService.get('maximum_time')
+      ) {
+        invalid.push(`${mention}(${totalSpentTime}h)`)
+        continue
       }
+
+      valid.push(email)
     }
 
-    return messages
+    let text = ''
+
+    if (valid.length) {
+      text +=
+        `*VALID TIME* ${this.configService.get('icon_valid')}\n` +
+        valid.join(' ')
+    }
+
+    if (invalid.length) {
+      if (text) text += '\n\n'
+
+      text +=
+        `*INVALID TIME* ${this.configService.get('icon_invalid')}\n` +
+        invalid.join(' ')
+    }
+
+    if (zero.length) {
+      if (text) text += '\n\n'
+
+      text +=
+        `*ZERO TIME* ${this.configService.get('icon_zero')}\n` + zero.join(' ')
+    }
+
+    return text
   }
 
   private sleep(ms: number) {
