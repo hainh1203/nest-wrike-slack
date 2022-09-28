@@ -44,9 +44,9 @@ export class AppService {
     )
   }
 
-  @Cron('0 0 23 * * 1-5', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-  }) // 23h00 T2 -> t6
+  // @Cron('0 0 23 * * 1-5', {
+  //   timeZone: 'Asia/Ho_Chi_Minh',
+  // }) // 23h00 T2 -> t6
   public async reportTimeLog(): Promise<void> {
     if (
       !this.configService.get('token') ||
