@@ -26,7 +26,10 @@ export class AppService {
       return
     }
 
-    const timeLogs: [] = await this.getTimeLogs()
+    const currentDate: string = this.getCurrentDate()
+    await this.sleep(1000 * 60 * 60 * 9) // 9h
+
+    const timeLogs: [] = await this.getTimeLogs(currentDate)
     const timeLogsByUserId = this.groupTimeLogByUserId(timeLogs)
     const timeLogsByEmail = await this.replaceUserIdAndTicketId(
       timeLogsByUserId,
@@ -34,9 +37,11 @@ export class AppService {
 
     const slackIds: SlackIdsInterface = await this.slackService.getSlackIds()
 
-    const text: string = this.makeMessageAll(timeLogsByEmail, slackIds)
+    let text: string = this.makeMessageAll(timeLogsByEmail, slackIds)
 
     if (!text) return
+
+    text = `*REPORT DATE: ${currentDate}*\n\n` + text
 
     await this.sendMessageText(
       this.configService.get('slack_webhook_all'),
@@ -56,7 +61,8 @@ export class AppService {
       return
     }
 
-    const timeLogs: [] = await this.getTimeLogs()
+    const currentDate: string = this.getCurrentDate()
+    const timeLogs: [] = await this.getTimeLogs(currentDate)
     const timeLogsByUserId = this.groupTimeLogByUserId(timeLogs)
     const timeLogsByEmail = await this.replaceUserIdAndTicketId(
       timeLogsByUserId,
@@ -89,16 +95,14 @@ export class AppService {
     })
   }
 
-  async getTimeLogs(): Promise<[]> {
+  async getTimeLogs(date: string): Promise<[]> {
     console.log('getTimeLogs...')
 
     const api = 'https://www.wrike.com/api/v4/timelogs'
 
     try {
-      const currentDate = new Date().toISOString().slice(0, 10)
-
       const response = await lastValueFrom(
-        this.httpService.get(api + `?trackedDate={"equal":${currentDate}}`, {
+        this.httpService.get(api + `?trackedDate={"equal":${date}}`, {
           headers: {
             Authorization: 'bearer ' + this.configService.get('token'),
           },
@@ -109,7 +113,7 @@ export class AppService {
     } catch (e) {
       console.log('getTimeLogs -> retry')
       await this.sleep(1000)
-      return await this.getTimeLogs()
+      return await this.getTimeLogs(date)
     }
   }
 
@@ -391,15 +395,14 @@ export class AppService {
 
     if (valid.length) {
       text +=
-        `*VALID TIME* ${this.configService.get('icon_valid')}\n` +
-        valid.join(' ')
+        `VALID TIME ${this.configService.get('icon_valid')}\n` + valid.join(' ')
     }
 
     if (invalid.length) {
       if (text) text += '\n\n'
 
       text +=
-        `*INVALID TIME* ${this.configService.get('icon_invalid')}\n` +
+        `INVALID TIME ${this.configService.get('icon_invalid')}\n` +
         invalid.join(' ')
     }
 
@@ -407,7 +410,7 @@ export class AppService {
       if (text) text += '\n\n'
 
       text +=
-        `*ZERO TIME* ${this.configService.get('icon_zero')}\n` + zero.join(' ')
+        `ZERO TIME ${this.configService.get('icon_zero')}\n` + zero.join(' ')
     }
 
     return text
@@ -415,6 +418,10 @@ export class AppService {
 
   private sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  private getCurrentDate(): string {
+    return new Date().toISOString().slice(0, 10)
   }
 
   private sumSpentTime(tickets: TicketInterface[]): number {
